@@ -1,0 +1,56 @@
+{
+  "name": "@danish/pi-shipyard",
+  "version": "0.1.0",
+  "description": "Opinionated Pi workflows for reading, planning, writing, reviewing, validating, and shipping code.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "agents/",
+    "chains/",
+    "extensions/",
+    "prompts/",
+    "skills/",
+    "scripts/",
+    "AGENTS.md",
+    "README.md"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi",
+    "subagents",
+    "code-review",
+    "agentic-workflows"
+  ],
+  "scripts": {
+    "validate": "node scripts/validate.mjs",
+    "test:unit": "node --experimental-strip-types --test test/*.test.ts",
+    "test": "npm run validate && npm run test:unit"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ],
+    "subagents": {
+      "agents": [
+        "./agents"
+      ],
+      "chains": [
+        "./chains"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}
