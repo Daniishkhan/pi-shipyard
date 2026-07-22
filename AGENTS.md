@@ -16,6 +16,8 @@ Pi Shipyard owns workflow policy, specialist roles, structured findings, and com
 - Findings require evidence, a failure scenario, and a smallest safe fix.
 - Findings provenance is immutable; updates require `expectedRevision`.
 - Review roles do not receive `bash`, `edit`, or `write`; Git inspection goes through `shipyard_repo`.
+- The serialized debugger may use `bash` for focused existing local checks but never receives `edit` or `write`, installs dependencies, uses the network, mutates Git, or starts persistent services.
+- Reusable `shipyard_context` is orientation bound to repository root and HEAD, never authority; stale or load-bearing claims must be verified in current source.
 - Shipyard never commits, pushes, publishes, deploys, or opens PRs automatically.
 
 ## Validation

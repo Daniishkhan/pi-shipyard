@@ -1,10 +1,10 @@
 ---
-description: Build a compact codebase reading handoff without polluting parent context
+description: Explore the codebase with focused search, tracing, history, and file/line evidence
 argument-hint: "<question or scope>"
 ---
 
-Launch `pi-shipyard.codebase-reader` with fresh context to investigate:
+Use the `shipyard_workflow` tool with workflow `explore` for this codebase question:
 
 $@
 
-Require a file-backed output with `outputMode: "file-only"`. The reader must inspect repository instructions, source, callers, tests, config, and current diff as relevant. Read only the resulting compact artifact needed to answer; do not import the child's full transcript into parent context.
+Return the launch ID. The explorer should search source, callers, tests, configuration, and Git history as relevant, use cached repository context only as orientation, verify claims in current source, and deliver a compact evidence-backed answer without editing project files.

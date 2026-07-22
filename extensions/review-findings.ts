@@ -76,10 +76,15 @@ const FindingsParams = Type.Object({
 }, { additionalProperties: false });
 
 const RepoParams = Type.Object({
-	action: StringEnum(["status", "diff", "diff-staged", "show", "log"] as const),
-	ref: Type.Optional(Type.String({ minLength: 1, maxLength: 256, description: "Git revision for show" })),
+	action: StringEnum(["status", "diff", "diff-staged", "diff-range", "diff-stat", "changed-files", "show", "log", "blame"] as const),
+	ref: Type.Optional(Type.String({ minLength: 1, maxLength: 256, description: "Git revision for show, log, or blame (defaults to HEAD)" })),
+	base: Type.Optional(Type.String({ minLength: 1, maxLength: 256, description: "Base revision for a merge-base comparison" })),
+	head: Type.Optional(Type.String({ minLength: 1, maxLength: 256, description: "Head revision paired with base (defaults to HEAD)" })),
+	staged: Type.Optional(Type.Boolean({ description: "Inspect staged changes for diff-stat or changed-files" })),
 	paths: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 1_024 }), { maxItems: 32 })),
-	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+	limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: "Maximum commits returned by log" })),
+	lineStart: Type.Optional(Type.Integer({ minimum: 1, description: "First line for blame" })),
+	lineEnd: Type.Optional(Type.Integer({ minimum: 1, description: "Last line for blame" })),
 }, { additionalProperties: false });
 
 function requiredText(value: string | undefined, label: string): string {
@@ -248,15 +253,20 @@ export default function registerReviewFindings(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "shipyard_repo",
 		label: "Shipyard Repo",
-		description: `Read-only Git inspection for Shipyard roles. Supports status, unstaged diff, staged diff, show, and short log. It accepts no arbitrary shell command and truncates output to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}.`,
+		description: `Read-only Git inspection for Shipyard roles. Supports status, unstaged/staged/range diffs, diff summaries, changed-file lists, commit patches, ref-aware log, and line-scoped blame. Range comparisons use merge-base semantics (base...head). It accepts no arbitrary shell command and truncates output to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}.`,
 		parameters: RepoParams,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			if (signal?.aborted) throw new Error("shipyard_repo cancelled");
 			const args = buildReadOnlyGitArgs(ctx.cwd, {
 				action: params.action,
 				...(params.ref ? { ref: params.ref } : {}),
+				...(params.base ? { base: params.base } : {}),
+				...(params.head ? { head: params.head } : {}),
+				...(params.staged !== undefined ? { staged: params.staged } : {}),
 				...(params.paths ? { paths: params.paths } : {}),
 				...(params.limit ? { limit: params.limit } : {}),
+				...(params.lineStart ? { lineStart: params.lineStart } : {}),
+				...(params.lineEnd ? { lineEnd: params.lineEnd } : {}),
 			});
 			const result = await pi.exec("git", args, { cwd: ctx.cwd, signal, timeout: 30_000 });
 			if (result.code !== 0) throw new Error(`git ${params.action} failed (${result.code}): ${result.stderr.trim() || result.stdout.trim()}`);

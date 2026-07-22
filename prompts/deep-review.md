@@ -3,7 +3,7 @@ description: Launch Shipyard's staged, context-efficient deep review mesh
 argument-hint: "[review target or focus]"
 ---
 
-Use the `shipyard_workflow` tool with workflow `review-mesh` for this review target:
+Use the `shipyard_workflow` tool with workflow `review` for this review target:
 
 ${@:-Review the current worktree diff against the current request, repository instructions, and existing behavior.}
 

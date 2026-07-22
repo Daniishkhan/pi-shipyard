@@ -8,21 +8,22 @@ import { Type } from "typebox";
 import { initializeStore } from "./findings-store.ts";
 import { createCapabilityRegistry, type CapabilityPolicy, type FindingUpdateField } from "./findings-capabilities.ts";
 import { ShipyardRpcClient, type RpcReply } from "./rpc-client.ts";
+import { WORKFLOW_NAMES, completeWorkflowModes, normalizeWorkflowName, parseShipyardCommand, type WorkflowName } from "./workflow-names.ts";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SHIPYARD_RUNS_ROOT = path.join(getAgentDir(), "shipyard-runs");
 const RPC_REPLY_TIMEOUT_MS = 15_000;
 
-const WORKFLOWS = {
-	"review-mesh": { file: "review-mesh.chain.json", timeoutMs: 45 * 60_000 },
-	"review-fast": { file: "review-fast.chain.json", timeoutMs: 20 * 60_000 },
-	"review-security": { file: "review-security.chain.json", timeoutMs: 60 * 60_000 },
-	"review-ui": { file: "review-ui.chain.json", timeoutMs: 60 * 60_000 },
-	deliver: { file: "deliver.chain.json", timeoutMs: 120 * 60_000 },
-	ship: { file: "ship.chain.json", timeoutMs: 90 * 60_000 },
-} as const;
-
-type WorkflowName = keyof typeof WORKFLOWS;
+const WORKFLOWS: Record<WorkflowName, { file: string; timeoutMs: number; findings: boolean }> = {
+	explore: { file: "explore.chain.json", timeoutMs: 15 * 60_000, findings: false },
+	debug: { file: "debug.chain.json", timeoutMs: 30 * 60_000, findings: false },
+	fast: { file: "review-fast.chain.json", timeoutMs: 20 * 60_000, findings: true },
+	review: { file: "review-mesh.chain.json", timeoutMs: 45 * 60_000, findings: true },
+	security: { file: "review-security.chain.json", timeoutMs: 60 * 60_000, findings: true },
+	ui: { file: "review-ui.chain.json", timeoutMs: 60 * 60_000, findings: true },
+	deliver: { file: "deliver.chain.json", timeoutMs: 120 * 60_000, findings: true },
+	ship: { file: "ship.chain.json", timeoutMs: 90 * 60_000, findings: true },
+};
 
 interface WorkflowFile {
 	name: string;
@@ -31,9 +32,21 @@ interface WorkflowFile {
 }
 
 const WorkflowParams = Type.Object({
-	workflow: StringEnum(Object.keys(WORKFLOWS) as WorkflowName[]),
-	task: Type.Optional(Type.String({ maxLength: 32_768, description: "Review, implementation, or shipping target" })),
+	workflow: StringEnum(WORKFLOW_NAMES),
+	task: Type.Optional(Type.String({ maxLength: 32_768, description: "Exploration question, failure symptom, review target, implementation task, or shipping scope" })),
 }, { additionalProperties: false });
+
+const SHIPYARD_HELP = [
+	"Shipyard: /shipyard <mode> [task]",
+	"  explore <question>   Search and trace the codebase",
+	"  debug <symptom>      Reproduce and root-cause a failure",
+	"  fast [target]        Focused two-angle review",
+	"  review [target]      Deep staged review mesh",
+	"  security [target]    Security-sensitive review",
+	"  ui [target]          UI, state, and accessibility review",
+	"  deliver <task>       Implement an approved task end to end",
+	"  ship [scope]         Fix and prove an existing diff",
+].join("\n");
 
 function textResult(text: string, details: Record<string, unknown> = {}) {
 	return { content: [{ type: "text" as const, text }], details };
@@ -78,7 +91,8 @@ function findingStage(task: Record<string, unknown>): string {
 function capabilityPolicy(task: Record<string, unknown>): CapabilityPolicy | undefined {
 	const agent = typeof task.agent === "string" ? task.agent : "";
 	const output = typeof task.as === "string" ? task.as : "";
-	if (!agent || agent.endsWith(".codebase-reader") || agent.endsWith(".delivery-planner")) return undefined;
+	if (!agent || agent.endsWith(".codebase-reader") || agent.endsWith(".codebase-explorer")
+		|| agent.endsWith(".debugger") || agent.endsWith(".delivery-planner")) return undefined;
 	const base = { stage: findingStage(task), sourceRole: agent };
 	if (FIRST_WAVE_OUTPUTS.has(output)) return { ...base, actions: ["init", "add"] };
 	if (agent.endsWith(".falsifier")) return {
@@ -138,13 +152,17 @@ function redactCapabilities(value: unknown, tokens: string[]): unknown {
 
 function defaultWorkflowTask(name: WorkflowName): string {
 	switch (name) {
-		case "review-mesh":
+		case "explore":
+			return "Map this repository's architecture, entry points, primary flows, module boundaries, and test harness for future codebase questions.";
+		case "debug":
+			return "Investigate the currently discussed failure or failing check, establish the root cause if reproducible, and propose the smallest safe fix.";
+		case "review":
 			return "Review the current worktree diff against the user request, repository instructions, and existing behavior.";
-		case "review-fast":
+		case "fast":
 			return "Run a focused bug review of the current worktree diff.";
-		case "review-security":
+		case "security":
 			return "Review the current worktree diff for correctness and security boundary failures.";
-		case "review-ui":
+		case "ui":
 			return "Review the current UI worktree diff for behavior, state-flow, accessibility, interaction, and visual regressions.";
 		case "deliver":
 			return "Implement the currently discussed approved task, review it, apply verified fixes, validate it, and prepare a delivery handoff.";
@@ -280,7 +298,7 @@ export default function registerWorkflows(pi: ExtensionAPI) {
 		}, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 		const rpcText = reply.data?.text?.trim() || `Launched Shipyard workflow ${name}.`;
 		return {
-			message: `${rpcText}\nShipyard run: ${run.runId}\nLedger: ${run.storePath}`,
+			message: `${rpcText}\nShipyard run: ${run.runId}${WORKFLOWS[name].findings ? `\nLedger: ${run.storePath}` : ""}`,
 			shipyardRunId: run.runId,
 			runDir: run.runDir,
 			storePath: run.storePath,
@@ -288,25 +306,18 @@ export default function registerWorkflows(pi: ExtensionAPI) {
 		};
 	}
 
-	function registerWorkflowCommand(command: string, workflow: WorkflowName, description: string): void {
-		pi.registerCommand(command, {
-			description,
-			handler: async (args, ctx) => {
-				try {
-					const launched = await spawnWorkflow(ctx, workflow, args);
-					ctx.ui.notify(launched.message, "info");
-				} catch (error) {
-					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
-				}
-			},
-		});
-	}
-
 	pi.registerTool({
 		name: "shipyard_workflow",
 		label: "Shipyard Workflow",
-		description: "Launch a deterministic asynchronous Shipyard workflow through the installed pi-subagents RPC. Use review-fast for a small change, review-mesh for deep review, review-security for trust-boundary changes, review-ui for UI work, deliver for an approved implementation, and ship for review/fix/validation of an existing diff. Shipyard never commits or pushes automatically.",
+		description: "Launch a deterministic asynchronous Shipyard workflow through pi-subagents. Use explore for codebase questions, debug for failure triage, fast or review for correctness review, security or ui for domain review, deliver for approved implementation, and ship for an existing diff. Shipyard never commits or pushes automatically.",
 		parameters: WorkflowParams,
+		prepareArguments(args) {
+			if (!args || typeof args !== "object") return args;
+			const input = args as { workflow?: unknown };
+			if (typeof input.workflow !== "string") return args;
+			const workflow = normalizeWorkflowName(input.workflow);
+			return workflow ? { ...input, workflow } : args;
+		},
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			if (signal?.aborted) throw new Error("shipyard_workflow cancelled");
 			const launched = await spawnWorkflow(ctx, params.workflow as WorkflowName, params.task, signal);
@@ -314,33 +325,25 @@ export default function registerWorkflows(pi: ExtensionAPI) {
 		},
 	});
 
-	registerWorkflowCommand("shipyard-review", "review-mesh", "Deep staged review with independent discovery, falsification, blind-spot hunting, and compact synthesis");
-	registerWorkflowCommand("shipyard-review-fast", "review-fast", "Focused two-angle bug review with compact adjudication");
-	registerWorkflowCommand("shipyard-review-security", "review-security", "Security-sensitive staged review mesh");
-	registerWorkflowCommand("shipyard-review-ui", "review-ui", "UI behavior, state-flow, accessibility, and interaction review mesh");
-	registerWorkflowCommand("shipyard-deliver", "deliver", "Read, plan, implement, review, fix, validate, and prepare a delivery handoff");
-	registerWorkflowCommand("shipyard-ship", "ship", "Review and fix existing work, revalidate it, and prepare a shipping handoff without commit/push");
-
-	// Familiar aliases. The packaged pi-subagents /parallel-review prompt is filtered during installation.
-	registerWorkflowCommand("parallel-review", "review-mesh", "Shipyard deep review mesh");
-	registerWorkflowCommand("review-fast", "review-fast", "Shipyard focused review");
-	registerWorkflowCommand("review-security", "review-security", "Shipyard security review");
-	registerWorkflowCommand("review-ui", "review-ui", "Shipyard UI review");
-	registerWorkflowCommand("deliver", "deliver", "Shipyard agentic delivery workflow");
-	registerWorkflowCommand("ship", "ship", "Shipyard shipping-readiness workflow");
-
 	pi.registerCommand("shipyard", {
-		description: "List Shipyard workflow commands",
-		handler: async (_args, ctx) => {
-			ctx.ui.notify([
-				"Shipyard workflows:",
-				"/shipyard-review-fast [target]",
-				"/shipyard-review [target] (alias: /parallel-review)",
-				"/shipyard-review-security [target]",
-				"/shipyard-review-ui [target]",
-				"/shipyard-deliver [approved implementation task]",
-				"/shipyard-ship [existing diff; never commits or pushes automatically]",
-			].join("\n"), "info");
+		description: "Explore, debug, review, deliver, or ship code with one command",
+		getArgumentCompletions: (prefix) => completeWorkflowModes(prefix)?.map((mode) => ({ value: mode, label: mode })) ?? null,
+		handler: async (args, ctx) => {
+			const parsed = parseShipyardCommand(args);
+			if (!parsed.mode) {
+				ctx.ui.notify(SHIPYARD_HELP, "info");
+				return;
+			}
+			if (!parsed.workflow) {
+				ctx.ui.notify(`Unknown Shipyard mode: ${parsed.mode}\n\n${SHIPYARD_HELP}`, "error");
+				return;
+			}
+			try {
+				const launched = await spawnWorkflow(ctx, parsed.workflow, parsed.task);
+				ctx.ui.notify(launched.message, "info");
+			} catch (error) {
+				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+			}
 		},
 	});
 }

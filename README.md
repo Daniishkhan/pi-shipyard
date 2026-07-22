@@ -1,6 +1,6 @@
 # Pi Shipyard
 
-Pi Shipyard is an opinionated user package for reading, planning, writing, reviewing, validating, and preparing code for shipment with Pi.
+Pi Shipyard is an opinionated user package for exploring, debugging, planning, writing, reviewing, validating, and preparing code for shipment with Pi.
 
 It deliberately **does not replace `pi-subagents`**. Pi Shipyard owns workflow policy, specialist agents, evidence handoffs, and a structured findings ledger. `pi-subagents` continues to own child processes, sessions, models, async lifecycle, artifacts, steering, budgets, and recovery.
 
@@ -31,15 +31,6 @@ Add it to `~/.pi/agent/settings.json`:
 }
 ```
 
-When Pi Shipyard owns `/parallel-review`, filter the stock prompt from the `pi-subagents` package to avoid duplicate autocomplete entries:
-
-```json
-{
-  "source": "npm:pi-subagents@0.35.1",
-  "prompts": ["!prompts/parallel-review.md"]
-}
-```
-
 Then run `/reload` or restart Pi. Validate discovery with:
 
 ```text
@@ -47,22 +38,34 @@ Then run `/reload` or restart Pi. Validate discovery with:
 /shipyard
 ```
 
-## Workflow commands
+## Workflow command
 
-All commands launch detached async work through `pi-subagents` RPC and immediately return a run ID. Normal `pi-subagents` lifecycle notifications deliver the compact final verdict. Shipyard persists a `requesting` launch receipt before RPC spawn; if a reply is lost during timeout, reload, or shutdown, the receipt becomes `launch-uncertain` instead of silently claiming that nothing launched.
+Shipyard has one human-facing command:
 
-| Command | Purpose |
+```text
+/shipyard <mode> [task]
+```
+
+Run `/shipyard` without arguments to list modes. Every mode launches detached async work through `pi-subagents` RPC and immediately returns a run ID. Normal `pi-subagents` lifecycle notifications deliver the compact result. Shipyard persists a `requesting` launch receipt before RPC spawn; if a reply is lost during timeout, reload, or shutdown, the receipt becomes `launch-uncertain` instead of silently claiming that nothing launched.
+
+| Mode | Purpose |
 | --- | --- |
-| `/shipyard-review-fast [target]` | Two independent bug-finding angles plus adjudication |
-| `/shipyard-review [target]` | Deep review mesh |
-| `/parallel-review [target]` | Familiar alias for `/shipyard-review` |
-| `/shipyard-review-security [target]` | Correctness plus threat-boundary review |
-| `/shipyard-review-ui [target]` | UI state, UX, accessibility, interaction, and visual-risk review |
-| `/shipyard-deliver <approved task>` | Read → plan → implement → review → fix → revalidate → delivery handoff |
-| `/shipyard-ship [scope]` | Review/fix/revalidate an existing diff and prepare shipping readiness |
-| `/shipyard` | List commands |
+| `explore <question>` | Grep-driven codebase Q&A, caller/flow/history tracing, and architecture mapping |
+| `debug <symptom>` | Safely reproduce, localize, root-cause, and propose the smallest fix without editing source |
+| `fast [target]` | Two independent bug-finding angles plus adjudication |
+| `review [target]` | Deep review mesh |
+| `security [target]` | Correctness plus threat-boundary review |
+| `ui [target]` | UI state, UX, accessibility, interaction, and visual-risk review |
+| `deliver <approved task>` | Read → plan → implement → review → fix → revalidate → delivery handoff |
+| `ship [scope]` | Review/fix/revalidate an existing diff and prepare shipping readiness |
 
-Natural-language agents can call the `shipyard_workflow` tool with `review-fast`, `review-mesh`, `review-security`, `review-ui`, `deliver`, or `ship`.
+Natural-language agents call `shipyard_workflow` with the same canonical names: `explore`, `debug`, `fast`, `review`, `security`, `ui`, `deliver`, or `ship`. Legacy tool values such as `review-mesh` and `review-fast` are normalized for resumed sessions, but duplicate legacy slash commands are not registered.
+
+### Explore and debug
+
+`explore` is the daily codebase-search mode. Its dedicated agent uses grep, file discovery, source reads, ref-aware Git inspection, history, and blame to answer a concrete question with `path:line` evidence. Broad architecture explorations can update a reusable repository map stored under `~/.pi/agent/shipyard-context`. The cache is keyed by canonical repository root and bound to HEAD; stale maps are labeled as orientation only and must be verified in current source.
+
+`debug` first builds a compact failure scope, then runs one serialized investigator. The investigator may execute focused existing local checks after inspecting their scripts, but cannot edit source. It reports reproduction commands and exit codes, the first bad state, competing hypotheses, a root-cause confidence verdict, the smallest fix seam, and a regression test. It is forbidden from installing dependencies, using the network, changing Git state, or starting persistent services.
 
 ### Shipping boundary
 
@@ -154,9 +157,11 @@ Snapshots contain sorted `{id, revision, sha256}` records and a collection hash.
 
 Runtime names are explicitly namespaced:
 
-### Understanding and delivery
+### Understanding, debugging, and delivery
 
+- `pi-shipyard.codebase-explorer`
 - `pi-shipyard.codebase-reader`
+- `pi-shipyard.debugger`
 - `pi-shipyard.delivery-planner`
 - `pi-shipyard.implementation-worker`
 - `pi-shipyard.shipwright`
@@ -178,9 +183,9 @@ Runtime names are explicitly namespaced:
 
 Review agents use strict tool allowlists. They leave `extensions` omitted so Pi loads the installed package provider normally; the allowlist exposes `review_findings` but not `shipyard_workflow` inside review children. This avoids non-portable relative `subagentOnlyExtensions` paths.
 
-Review roles have no `bash`, `edit`, or `write` tool. They inspect Git state through `shipyard_repo`, a narrow read-only tool supporting status, unstaged/staged diff, show, and short log. Every Git invocation uses the global `--no-optional-locks` safeguard so status inspection cannot refresh or rewrite the index. This prevents a nominal reviewer from creating reproduction scripts or otherwise mutating the reviewed worktree through a shell. Reviewers provide precise reproduction commands when execution is unavailable; the implementation worker and shipwright perform dynamic validation in serialized write-capable stages.
+Review roles have no `bash`, `edit`, or `write` tool. They inspect Git state through `shipyard_repo`, a narrow read-only tool supporting status; unstaged, staged, and merge-base range diffs; diff stats and changed-file lists; full commit patches; ref-aware log; and line-scoped blame. Every Git invocation uses the global `--no-optional-locks` safeguard so status inspection cannot refresh or rewrite the index. Paths and revisions are normalized as argv rather than shell text. This prevents a nominal reviewer from creating reproduction scripts or otherwise mutating the reviewed worktree through a shell.
 
-The implementation worker is the only source-editing role in a normal active worktree stage. Read-only chain stages also carry explicit tool-call budgets to cap pathological exploration while leaving room for final receipts.
+The debugger is a separate serialized execution role. It has `bash` for narrowly scoped existing local checks but no `edit` or `write`; its contract prohibits package installation, network access, Git mutation, persistent services, destructive commands, and source-generating checks. The implementation worker remains the only source-editing role in a normal active-worktree stage. Read-only chain stages also carry explicit tool-call budgets to cap pathological exploration while leaving room for final receipts.
 
 ## Model diversity
 
@@ -234,7 +239,7 @@ pi -p "/subagents-doctor"
 pi -p "/shipyard"
 ```
 
-For a no-edit live workflow smoke test, use `/shipyard-review-fast` on a tiny disposable repository and verify:
+For a no-edit live workflow smoke test, use `/shipyard fast` on a tiny disposable repository and verify:
 
 1. every required child sees `review_findings`;
 2. intermediate completion output contains file references, not full reports;
@@ -247,8 +252,8 @@ For a no-edit live workflow smoke test, use `/shipyard-review-fast` on a tiny di
 - There is no live sibling-to-sibling chat. Exchange is staged through files, ledger records, and snapshots by design.
 - Required reviewer failure stops synthesis. Partial-review continuation is not represented as success.
 - Saved chain files require Shipyard placeholder substitution and are not directly runnable through native `/run-chain`.
-- Tool restrictions are Pi capability boundaries, not an operating-system sandbox. Reviewers receive only read-oriented built-ins, `shipyard_repo`, and the run-scoped ledger tool; write-capable stages still rely on repository permissions and explicit policy.
+- Tool restrictions are Pi capability boundaries, not an operating-system sandbox. Reviewers receive only read-oriented built-ins, `shipyard_repo`, and the run-scoped ledger tool. The debugger has shell execution under a strict prompt contract, and shell/write-capable stages still rely on repository permissions and explicit policy.
 - Pi packages/extensions are trusted in-process code. The documented event-bus RPC authenticates correlation, not a malicious co-installed extension; such an extension already has equivalent local Node.js authority.
 - A step's raw bearer token necessarily appears in that child's private runtime input/session artifacts. Capabilities prevent accidental and ordinary cross-stage misuse; they are not isolation from a malicious same-user process that searches local Pi artifacts.
-- Free-form repository and child artifacts are evidence, never authorization. Model instruction hierarchy and explicit writer contracts mitigate prompt injection, but a writer with shell/filesystem tools is not an OS-isolated security boundary.
+- Free-form repository and child artifacts are evidence, never authorization. Model instruction hierarchy and explicit execution/writer contracts mitigate prompt injection, but a role with shell/filesystem tools is not an OS-isolated security boundary.
 - Provider/model availability is local; fallback resolution still requires authenticated configured models.

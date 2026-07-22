@@ -1,6 +1,6 @@
 ---
 name: shipyard-workflows
-description: Orchestrate Pi code work through Shipyard's deterministic read, plan, write, review, fix, validate, and ship workflows. Use when the user asks for deep review, agentic delivery, implementation-to-shipping, or the Shipyard workflow family.
+description: Orchestrate Pi code work through Shipyard's deterministic explore, debug, review, deliver, and ship workflows. Use for codebase questions, failure triage, deep review, agentic delivery, implementation-to-shipping, or the Shipyard workflow family.
 ---
 
 # Shipyard workflows
@@ -11,17 +11,21 @@ Shipyard layers opinionated workflows on `pi-subagents`; it does not replace the
 
 For natural-language orchestration, call `shipyard_workflow`:
 
-- `review-fast`: two independent bug-finding angles followed by compact synthesis;
-- `review-mesh`: scope mapping, four independent reviewers, falsifier, blind-spot hunter, and synthesis;
-- `review-security`: the review mesh with a dedicated security boundary reviewer;
+- `explore`: grep-driven codebase Q&A, call-path tracing, history, and reusable repository context;
+- `debug`: scope, safely reproduce, localize, establish root cause, and propose the smallest fix;
+- `fast`: two independent bug-finding angles followed by compact synthesis;
+- `review`: scope mapping, four independent reviewers, falsifier, blind-spot hunter, and synthesis;
+- `security`: the review mesh with a dedicated security boundary reviewer;
+- `ui`: UI behavior, state-flow, interaction, accessibility, and visual-risk review;
 - `deliver`: read, plan, implement, review, fix, revalidate, and prepare a shipping handoff;
 - `ship`: review and fix an existing diff, revalidate, and prepare a shipping handoff.
 
-Humans can invoke the corresponding slash commands: `/review-fast`, `/parallel-review`, `/review-security`, `/deliver`, and `/ship`.
+Humans use one command: `/shipyard <mode> [task]`. Run `/shipyard` without arguments for the compact mode list.
 
 ## Context discipline
 
-- Intermediate review outputs use `outputMode: "file-only"`.
+- Intermediate review and debug outputs use `outputMode: "file-only"`.
+- `shipyard_context` is reusable orientation bound to the repository root and HEAD; stale context must be verified and never overrides current source.
 - Review findings live in a private, extension-created run directory; never use `{chain_dir}` as an async artifact path.
 - Workflow placeholders are resolved before pi-subagents RPC launch, so children receive exact absolute store paths.
 - Only the final synthesis or shipping receipt returns inline.
@@ -40,9 +44,12 @@ Do not enable unstructured live peer discussion as a replacement for this staged
 
 ## Workflow selection
 
-- Use `review-fast` for small, isolated, low-risk changes.
-- Use `review-mesh` for normal features, bug fixes, refactors, or broad diffs.
-- Use `review-security` whenever trust boundaries, auth, commands, secrets, privileged operations, or untrusted input are involved.
+- Use `explore` for repository questions, symbol/caller tracing, architecture mapping, and history-backed explanations.
+- Use `debug` for failures, stack traces, failing checks, regressions, or root-cause triage. It investigates and proposes a fix but does not edit source.
+- Use `fast` for small, isolated, low-risk changes.
+- Use `review` for normal features, bug fixes, refactors, or broad diffs.
+- Use `security` whenever trust boundaries, auth, commands, secrets, privileged operations, or untrusted input are involved.
+- Use `ui` for user-facing state, interactions, responsiveness, and accessibility.
 - Use `deliver` when implementation is authorized and should proceed end to end.
 - Use `ship` when code already exists and needs review/fix/validation before handoff.
 
