@@ -3,7 +3,7 @@ name: blindspot-hunter
 package: pi-shipyard
 description: Reviews what the first wave did not cover and searches for sibling instances of discovered bug classes
 model: google-vertex/gemini-3.1-pro-preview
-fallbackModels: anthropic-vertex/claude-fable-5, openai-codex/gpt-5.6-sol
+fallbackModels: kimi-coding/k3, openai-codex/gpt-5.6-sol
 thinking: high
 tools: read, grep, find, ls, review_findings, shipyard_repo
 systemPromptMode: replace

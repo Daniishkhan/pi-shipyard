@@ -3,7 +3,7 @@ name: debugger
 package: pi-shipyard
 description: Reproduces failures with existing project commands, traces the failing path, establishes root cause, and proposes the smallest safe fix
 model: openai-codex/gpt-5.6-sol
-fallbackModels: anthropic-vertex/claude-fable-5, google-vertex/gemini-3.1-pro-preview
+fallbackModels: kimi-coding/k3, google-vertex/gemini-3.1-pro-preview
 thinking: xhigh
 tools: read, grep, find, ls, bash, shipyard_repo, shipyard_context
 systemPromptMode: replace

@@ -2,8 +2,8 @@
 name: falsifier
 package: pi-shipyard
 description: Independently verifies, rejects, or narrows proposed review findings before fixes are authorized
-model: anthropic-vertex/claude-opus-4-8
-fallbackModels: openai-codex/gpt-5.6-sol, anthropic-vertex/claude-fable-5
+model: kimi-coding/k3
+fallbackModels: openai-codex/gpt-5.6-sol, google-vertex/gemini-3.6-flash
 thinking: high
 tools: read, grep, find, ls, review_findings, shipyard_repo
 systemPromptMode: replace

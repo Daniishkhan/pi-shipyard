@@ -3,7 +3,7 @@ name: review-synthesizer
 package: pi-shipyard
 description: Adjudicates the findings ledger and reviewer receipts into a compact, actionable review verdict
 model: openai-codex/gpt-5.6-sol
-fallbackModels: anthropic-vertex/claude-fable-5
+fallbackModels: kimi-coding/k3, google-vertex/gemini-3.6-flash
 thinking: high
 tools: read, grep, find, ls, review_findings, shipyard_repo
 systemPromptMode: replace

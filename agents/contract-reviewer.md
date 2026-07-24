@@ -3,7 +3,7 @@ name: contract-reviewer
 package: pi-shipyard
 description: Finds requirement, invariant, API, persistence, and compatibility violations in code changes
 model: openai-codex/gpt-5.6-sol
-fallbackModels: anthropic-vertex/claude-fable-5
+fallbackModels: kimi-coding/k3, google-vertex/gemini-3.6-flash
 thinking: xhigh
 tools: read, grep, find, ls, review_findings, shipyard_repo
 systemPromptMode: replace

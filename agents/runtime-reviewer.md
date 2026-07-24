@@ -2,8 +2,8 @@
 name: runtime-reviewer
 package: pi-shipyard
 description: Traces runtime data flow, state transitions, errors, retries, cancellation, cleanup, and concurrency to find behavioral failures
-model: anthropic-vertex/claude-fable-5
-fallbackModels: openai-codex/gpt-5.6-sol
+model: kimi-coding/k3
+fallbackModels: openai-codex/gpt-5.6-sol, google-vertex/gemini-3.6-flash
 thinking: high
 tools: read, grep, find, ls, review_findings, shipyard_repo
 systemPromptMode: replace

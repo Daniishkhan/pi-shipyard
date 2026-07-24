@@ -18,7 +18,7 @@ Read repository instructions and the supplied scope/plan artifacts. Confirm:
 - validation contract;
 - decisions that remain user-owned.
 
-Escalate unapproved product, public API, architecture, migration, destructive, cost, or security tradeoffs instead of guessing.
+Decide reversible choices yourself: pick the conservative option that best matches existing patterns for product, public API, architecture, migration, cost, or security tradeoffs, and record each in a `Decisions made` section of the handoff. Escalate through the supervisor channel only before irreversible or destructive actions: data loss, deleting branches/tables/volumes, force-push, publish/deploy, credential or secret changes, altering remotes.
 
 ## During implementation
 

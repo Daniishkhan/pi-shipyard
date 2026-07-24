@@ -100,6 +100,11 @@ for (const name of agentFiles) {
 	}
 }
 
+const workflowsSource = readFileSync(path.join(root, "extensions", "workflows.ts"), "utf8");
+if (!workflowsSource.includes("artifacts: false") || workflowsSource.includes("artifacts: true")) {
+	fail("extensions/workflows.ts: Shipyard RPC launches must disable project-local pi-subagents artifacts");
+}
+
 const outputReferencePattern = /\{outputs\.([A-Za-z_][A-Za-z0-9_]*)\}/g;
 const allowedStepKeys = new Set([
 	"agent", "task", "phase", "label", "as", "outputSchema", "cwd", "output", "outputMode", "reads", "progress",
@@ -146,6 +151,27 @@ function inspectTask(chainFile, stepNumber, task, available, produced, isParalle
 	if (task.task?.includes("{chain_dir}")) fail(`${prefix}: async RPC workflows must not rely on {chain_dir}`);
 }
 
+function validateDeliveryTopology(chain, name) {
+	const implementationIndex = chain.chain.findIndex((step) => step.agent === "pi-shipyard.implementation-worker" && step.as === "implementation");
+	const reviewIndex = chain.chain.findIndex((step) => Array.isArray(step.parallel));
+	const falsifierIndex = chain.chain.findIndex((step) => step.agent === "pi-shipyard.falsifier");
+	const fixesIndex = chain.chain.findIndex((step) => step.agent === "pi-shipyard.implementation-worker" && step.as === "fixes");
+	const finalIndex = chain.chain.length - 1;
+	const final = chain.chain[finalIndex];
+	const ordered = implementationIndex >= 0 && implementationIndex < reviewIndex && reviewIndex < falsifierIndex
+		&& falsifierIndex < fixesIndex && fixesIndex < finalIndex;
+	if (!ordered) fail(`chains/${name}: delivery topology must be implementation -> independent review -> falsifier -> fixes -> final validation`);
+	const reviewers = reviewIndex >= 0 ? chain.chain[reviewIndex].parallel : undefined;
+	if (!Array.isArray(reviewers) || reviewers.length !== 2) fail(`chains/${name}: delivery must use exactly two independent reviewers`);
+	const writers = chain.chain.filter((step) => step.agent === "pi-shipyard.implementation-worker");
+	if (writers.length !== 2 || writers.some((step) => !["implementation", "fixes"].includes(step.as))) {
+		fail(`chains/${name}: delivery must serialize exactly the initial and fix writer stages`);
+	}
+	if (final?.agent !== "pi-shipyard.shipwright" || final?.outputMode !== "inline") {
+		fail(`chains/${name}: delivery must end with an inline shipwright validation`);
+	}
+}
+
 const chainDir = path.join(root, "chains");
 for (const name of readdirSync(chainDir).filter((entry) => entry.endsWith(".chain.json")).sort()) {
 	const file = path.join(chainDir, name);
@@ -154,9 +180,16 @@ for (const name of readdirSync(chainDir).filter((entry) => entry.endsWith(".chai
 	if (!chain.name || !chain.description || !Array.isArray(chain.chain)) fail(`chains/${name}: invalid saved-chain root`);
 	if (chain.package !== "pi-shipyard") fail(`chains/${name}: package must be pi-shipyard`);
 	const available = new Set();
+	const outputPaths = new Set();
 	for (let index = 0; index < (chain.chain ?? []).length; index++) {
 		const step = chain.chain[index];
 		const produced = new Set();
+		const outputTasks = Array.isArray(step.parallel) ? step.parallel : [step];
+		for (const task of outputTasks) {
+			if (typeof task.output !== "string") continue;
+			if (outputPaths.has(task.output)) fail(`chains/${name} step ${index + 1}: duplicate output path ${task.output}`);
+			outputPaths.add(task.output);
+		}
 		if (Array.isArray(step.parallel)) {
 			for (const key of Object.keys(step)) if (!allowedStepKeys.has(key)) fail(`chains/${name} step ${index + 1}: unsupported group key ${key}`);
 			const writerCount = step.parallel.filter((task) => task.agent === "pi-shipyard.implementation-worker").length;
@@ -167,8 +200,13 @@ for (const name of readdirSync(chainDir).filter((entry) => entry.endsWith(".chai
 		}
 		for (const output of produced) available.add(output);
 	}
-	if ((chain.name.startsWith("review-") || chain.name === "ship" || chain.name === "deliver") && !JSON.stringify(chain).includes("{{SHIPYARD_STORE}}")) {
+	if ((chain.name.startsWith("review-") || ["ship", "deliver", "deliver-compact"].includes(chain.name)) && !JSON.stringify(chain).includes("{{SHIPYARD_STORE}}")) {
 		fail(`chains/${name}: review workflow must use the extension-created Shipyard store placeholder`);
+	}
+	if (["deliver", "deliver-compact"].includes(chain.name)) validateDeliveryTopology(chain, name);
+	if (chain.name === "deliver") {
+		const childExecutions = chain.chain.reduce((total, step) => total + (Array.isArray(step.parallel) ? step.parallel.length : 1), 0);
+		if (childExecutions > 8) fail(`chains/${name}: focused delivery may use at most 8 child executions, found ${childExecutions}`);
 	}
 	if (JSON.stringify(chain).includes("{chain_dir}")) fail(`chains/${name}: contains unsupported async {chain_dir} dependency`);
 	const final = chain.chain.at(-1);

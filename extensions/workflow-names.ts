@@ -1,4 +1,4 @@
-export const WORKFLOW_NAMES = ["explore", "debug", "fast", "review", "security", "ui", "deliver", "ship"] as const;
+export const WORKFLOW_NAMES = ["explore", "debug", "fast", "review", "security", "ui", "compact", "deliver", "ship"] as const;
 
 export type WorkflowName = (typeof WORKFLOW_NAMES)[number];
 
@@ -8,6 +8,7 @@ const LEGACY_WORKFLOW_NAMES: Record<string, WorkflowName> = {
 	"review-mesh": "review",
 	"review-security": "security",
 	"review-ui": "ui",
+	"deliver-compact": "compact",
 };
 
 export function normalizeWorkflowName(value: string): WorkflowName | undefined {

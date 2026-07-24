@@ -3,7 +3,7 @@ name: adversarial-tester
 package: pi-shipyard
 description: Constructs counterexamples and focused reproductions to expose bugs that ordinary diff reading misses
 model: google-vertex/gemini-3.1-pro-preview
-fallbackModels: openai-codex/gpt-5.6-sol, anthropic-vertex/claude-fable-5
+fallbackModels: openai-codex/gpt-5.6-sol, kimi-coding/k3
 thinking: high
 tools: read, grep, find, ls, review_findings, shipyard_repo
 systemPromptMode: replace

@@ -9,6 +9,7 @@ import { initializeStore } from "./findings-store.ts";
 import { createCapabilityRegistry, type CapabilityPolicy, type FindingUpdateField } from "./findings-capabilities.ts";
 import { ShipyardRpcClient, type RpcReply } from "./rpc-client.ts";
 import { WORKFLOW_NAMES, completeWorkflowModes, normalizeWorkflowName, parseShipyardCommand, type WorkflowName } from "./workflow-names.ts";
+import { materializeWorkflowOutputs, resolveWorkflowTask } from "./workflow-policy.ts";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SHIPYARD_RUNS_ROOT = path.join(getAgentDir(), "shipyard-runs");
@@ -21,6 +22,7 @@ const WORKFLOWS: Record<WorkflowName, { file: string; timeoutMs: number; finding
 	review: { file: "review-mesh.chain.json", timeoutMs: 45 * 60_000, findings: true },
 	security: { file: "review-security.chain.json", timeoutMs: 60 * 60_000, findings: true },
 	ui: { file: "review-ui.chain.json", timeoutMs: 60 * 60_000, findings: true },
+	compact: { file: "deliver-compact.chain.json", timeoutMs: 60 * 60_000, findings: true },
 	deliver: { file: "deliver.chain.json", timeoutMs: 120 * 60_000, findings: true },
 	ship: { file: "ship.chain.json", timeoutMs: 90 * 60_000, findings: true },
 };
@@ -33,7 +35,7 @@ interface WorkflowFile {
 
 const WorkflowParams = Type.Object({
 	workflow: StringEnum(WORKFLOW_NAMES),
-	task: Type.Optional(Type.String({ maxLength: 32_768, description: "Exploration question, failure symptom, review target, implementation task, or shipping scope" })),
+	task: Type.Optional(Type.String({ maxLength: 32_768, description: "Target or scope. Required for debug, compact, and deliver; optional diff defaults exist for review and ship." })),
 }, { additionalProperties: false });
 
 const SHIPYARD_HELP = [
@@ -44,6 +46,7 @@ const SHIPYARD_HELP = [
 	"  review [target]      Deep staged review mesh",
 	"  security [target]    Security-sensitive review",
 	"  ui [target]          UI, state, and accessibility review",
+	"  compact <task>       Lite delivery: implement, two-angle review, fix, handoff",
 	"  deliver <task>       Implement an approved task end to end",
 	"  ship [scope]         Fix and prove an existing diff",
 ].join("\n");
@@ -112,12 +115,15 @@ function capabilityPolicy(task: Record<string, unknown>): CapabilityPolicy | und
 		updateFields: ALL_UPDATE_FIELDS,
 		updateStatuses: ["verified", "rejected", "deferred", "resolved"],
 	};
-	if (agent.endsWith(".implementation-worker")) return {
-		...base,
-		actions: ["init", "get", "list", "update", "stats"],
-		updateFields: ["status", "suggestedFix", "validation", "dispositionReason", "tags"],
-		updateStatuses: ["resolved", "deferred"],
-	};
+	if (agent.endsWith(".implementation-worker")) {
+		if (output !== "fixes") return undefined;
+		return {
+			...base,
+			actions: ["init", "get", "list", "update", "stats"],
+			updateFields: ["status", "suggestedFix", "validation", "dispositionReason", "tags"],
+			updateStatuses: ["resolved", "deferred"],
+		};
+	}
 	if (agent.endsWith(".shipwright")) return {
 		...base,
 		actions: ["init", "add", "get", "list", "update", "stats", "snapshot", "export"],
@@ -150,27 +156,6 @@ function redactCapabilities(value: unknown, tokens: string[]): unknown {
 	return JSON.parse(serialized);
 }
 
-function defaultWorkflowTask(name: WorkflowName): string {
-	switch (name) {
-		case "explore":
-			return "Map this repository's architecture, entry points, primary flows, module boundaries, and test harness for future codebase questions.";
-		case "debug":
-			return "Investigate the currently discussed failure or failing check, establish the root cause if reproducible, and propose the smallest safe fix.";
-		case "review":
-			return "Review the current worktree diff against the user request, repository instructions, and existing behavior.";
-		case "fast":
-			return "Run a focused bug review of the current worktree diff.";
-		case "security":
-			return "Review the current worktree diff for correctness and security boundary failures.";
-		case "ui":
-			return "Review the current UI worktree diff for behavior, state-flow, accessibility, interaction, and visual regressions.";
-		case "deliver":
-			return "Implement the currently discussed approved task, review it, apply verified fixes, validate it, and prepare a delivery handoff.";
-		case "ship":
-			return "Review, fix, validate, and prepare the current worktree changes for shipment. Do not commit or push.";
-	}
-}
-
 export default function registerWorkflows(pi: ExtensionAPI) {
 	const rpc = new ShipyardRpcClient(pi.events, RPC_REPLY_TIMEOUT_MS);
 	pi.on("session_shutdown", () => rpc.dispose());
@@ -186,13 +171,17 @@ export default function registerWorkflows(pi: ExtensionAPI) {
 		const runId = safePart("R", `${Date.now().toString(36)}-${randomUUID().slice(0, 12)}`);
 		const runDir = path.join(SHIPYARD_RUNS_ROOT, sessionDir, runId);
 		const storePath = path.join(runDir, "findings");
+		const artifactsDir = path.join(runDir, "artifacts");
+		await mkdir(runDir, { recursive: true, mode: 0o700 });
 		await mkdir(storePath, { recursive: true, mode: 0o700 });
+		await mkdir(artifactsDir, { recursive: true, mode: 0o700 });
 		await initializeStore(storePath, { runId, workflow: name });
-		const chain = replacePlaceholders(workflow.chain, {
+		const replacedChain = replacePlaceholders(workflow.chain, {
 			"{{SHIPYARD_RUN_ID}}": runId,
 			"{{SHIPYARD_RUN_DIR}}": runDir,
 			"{{SHIPYARD_STORE}}": storePath,
 		}) as Array<Record<string, unknown>>;
+		const chain = materializeWorkflowOutputs(replacedChain, artifactsDir);
 		const capabilityTasks = collectCapabilityTasks(chain);
 		const grants = await createCapabilityRegistry(storePath, runId, name, capabilityTasks.map((entry) => entry.policy));
 		for (let index = 0; index < capabilityTasks.length; index += 1) {
@@ -220,6 +209,7 @@ export default function registerWorkflows(pi: ExtensionAPI) {
 		storePath: string;
 		rpc: RpcReply["data"];
 	}> {
+		const target = resolveWorkflowTask(name, task);
 		const ping = await rpc.request("ping", {}, signal);
 		if (!ping.success) throw new Error(`${ping.error?.code ?? "rpc_error"}: ${ping.error?.message ?? "pi-subagents RPC ping failed."}`);
 		if (signal?.aborted) throw new Error("Shipyard workflow cancelled after RPC readiness check.");
@@ -230,7 +220,6 @@ export default function registerWorkflows(pi: ExtensionAPI) {
 			await rm(run.runDir, { recursive: true, force: true });
 			throw new Error("Shipyard workflow cancelled before subagent spawn.");
 		}
-		const target = task?.trim() || defaultWorkflowTask(name);
 		const launchPath = path.join(run.runDir, "launch.json");
 		const launchBase = {
 			schemaVersion: 1,
@@ -252,7 +241,7 @@ export default function registerWorkflows(pi: ExtensionAPI) {
 				context: "fresh",
 				async: true,
 				clarify: false,
-				artifacts: true,
+				artifacts: false,
 				maxRuntimeMs: WORKFLOWS[name].timeoutMs,
 			});
 		} catch (error) {
@@ -309,7 +298,7 @@ export default function registerWorkflows(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "shipyard_workflow",
 		label: "Shipyard Workflow",
-		description: "Launch a deterministic asynchronous Shipyard workflow through pi-subagents. Use explore for codebase questions, debug for failure triage, fast or review for correctness review, security or ui for domain review, deliver for approved implementation, and ship for an existing diff. Shipyard never commits or pushes automatically.",
+		description: "Launch a deterministic asynchronous Shipyard workflow through pi-subagents. Use explore for codebase questions, debug for failure triage, fast or review for correctness review, security or ui for domain review, compact for slice-sized delivery, deliver for approved implementation, and ship for an existing diff. Shipyard never commits or pushes automatically.",
 		parameters: WorkflowParams,
 		prepareArguments(args) {
 			if (!args || typeof args !== "object") return args;

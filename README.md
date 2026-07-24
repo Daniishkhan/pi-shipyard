@@ -56,10 +56,11 @@ Run `/shipyard` without arguments to list modes. Every mode launches detached as
 | `review [target]` | Deep review mesh |
 | `security [target]` | Correctness plus threat-boundary review |
 | `ui [target]` | UI state, UX, accessibility, interaction, and visual-risk review |
-| `deliver <approved task>` | Read → plan → implement → review → fix → revalidate → delivery handoff |
+| `compact <approved slice>` | Lite delivery: implement → two-angle review → falsify → fix → readiness handoff |
+| `deliver <approved task>` | Read → plan → implement → two-angle review → verified fix → final validation |
 | `ship [scope]` | Review/fix/revalidate an existing diff and prepare shipping readiness |
 
-Natural-language agents call `shipyard_workflow` with the same canonical names: `explore`, `debug`, `fast`, `review`, `security`, `ui`, `deliver`, or `ship`. Legacy tool values such as `review-mesh` and `review-fast` are normalized for resumed sessions, but duplicate legacy slash commands are not registered.
+Natural-language agents call `shipyard_workflow` with the same canonical names: `explore`, `debug`, `fast`, `review`, `security`, `ui`, `compact`, `deliver`, or `ship`. Legacy tool values such as `review-mesh` and `review-fast` are normalized for resumed sessions, but duplicate legacy slash commands are not registered.
 
 ### Explore and debug
 
@@ -93,7 +94,7 @@ A required reviewer failure is a hard gate: the chain stops rather than presenti
 
 ## Context discipline
 
-Intermediate child outputs always set both:
+Saved chain resources give intermediate child outputs unique relative names:
 
 ```json
 {
@@ -102,7 +103,7 @@ Intermediate child outputs always set both:
 }
 ```
 
-Named outputs therefore carry compact file references. Every downstream role is explicitly told to open the referenced files. The final synthesizer or shipwright is the only inline output, so parent context receives a compact verdict rather than every child transcript.
+Before RPC launch, Shipyard resolves every output to an absolute path beneath the private run's `artifacts/` directory and rejects absolute or escaping resource paths. Project-local pi-subagents artifact capture is disabled for Shipyard launches, so child inputs, transcripts, and raw findings capabilities are not copied into the target repository's `.pi-subagents/` tree. Named outputs still carry compact file references, and every downstream role is told to open them. The final synthesizer or shipwright is the only inline output.
 
 `output: false` is intentionally not used as a context-control mechanism; it disables persistence while returning full output inline.
 
@@ -115,6 +116,10 @@ On the supported `pi-subagents@0.35.1` async RPC path, `{chain_dir}` is not a re
 ├── workflow.json                 # capability values redacted
 ├── launch.json                   # requesting/launched/uncertain receipt
 ├── .findings-capabilities.json   # token hashes and stage policies
+├── artifacts/                    # private child handoffs
+│   ├── scope/*.md
+│   ├── review/*.md
+│   └── delivery/*.md
 ├── findings/
 │   ├── manifest.json
 │   ├── F-*.json
@@ -194,7 +199,7 @@ Review roles intentionally use different configured providers/models to reduce c
 Current defaults use a mix of:
 
 - OpenAI Codex GPT 5.6 variants
-- Anthropic Vertex Claude Fable/Opus
+- Kimi Coding K3
 - Google Vertex Gemini Pro/Flash
 
 Run `/subagents-models` and inspect `/subagents-doctor` after changes.
@@ -230,7 +235,7 @@ npm test
 npm pack --dry-run
 ```
 
-`npm test` validates manifests, namespacing, resource references, chain output bindings, writer serialization, explicit file-only artifact reads, first-wave independence rules, reviewer tool safety, skill references, async path discipline, and findings-store behavior. Unit tests include a separate-process optimistic-update race, cross-run record rejection, symlink-export rejection, concurrent atomic publication, and RPC cancellation/listener cleanup.
+`npm test` validates manifests, namespacing, resource references, chain output bindings, private output materialization, required delivery/debug tasks, writer serialization, explicit file-only artifact reads, first-wave independence rules, reviewer tool safety, delivery topology, skill references, async path discipline, and findings-store behavior. Unit tests include a separate-process optimistic-update race, cross-run record rejection, symlink-export rejection, concurrent atomic publication, and RPC cancellation/listener cleanup.
 
 Recommended installation smoke checks:
 

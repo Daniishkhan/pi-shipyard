@@ -3,7 +3,7 @@ name: ui-reviewer
 package: pi-shipyard
 description: Finds user-flow, accessibility, responsive, state-feedback, copy, and interaction regressions in UI changes
 model: google-vertex/gemini-3.1-pro-preview
-fallbackModels: anthropic-vertex/claude-fable-5, openai-codex/gpt-5.6-sol
+fallbackModels: google-vertex/gemini-3.6-flash, openai-codex/gpt-5.6-sol
 thinking: high
 tools: read, grep, find, ls, review_findings, shipyard_repo
 systemPromptMode: replace

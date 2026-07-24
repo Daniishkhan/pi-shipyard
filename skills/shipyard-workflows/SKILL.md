@@ -17,7 +17,8 @@ For natural-language orchestration, call `shipyard_workflow`:
 - `review`: scope mapping, four independent reviewers, falsifier, blind-spot hunter, and synthesis;
 - `security`: the review mesh with a dedicated security boundary reviewer;
 - `ui`: UI behavior, state-flow, interaction, accessibility, and visual-risk review;
-- `deliver`: read, plan, implement, review, fix, revalidate, and prepare a shipping handoff;
+- `compact`: slice-sized delivery — implement, two-angle review, falsification, fixes, and readiness handoff;
+- `deliver`: read, plan, implement, run a focused two-angle review, apply verified fixes, and prepare a validated shipping handoff;
 - `ship`: review and fix an existing diff, revalidate, and prepare a shipping handoff.
 
 Humans use one command: `/shipyard <mode> [task]`. Run `/shipyard` without arguments for the compact mode list.
@@ -50,6 +51,7 @@ Do not enable unstructured live peer discussion as a replacement for this staged
 - Use `review` for normal features, bug fixes, refactors, or broad diffs.
 - Use `security` whenever trust boundaries, auth, commands, secrets, privileged operations, or untrusted input are involved.
 - Use `ui` for user-facing state, interactions, responsiveness, and accessibility.
+- Use `compact` for pre-approved, well-specified slices that need implementation plus a fast verified review.
 - Use `deliver` when implementation is authorized and should proceed end to end.
 - Use `ship` when code already exists and needs review/fix/validation before handoff.
 

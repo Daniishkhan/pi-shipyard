@@ -2,8 +2,8 @@
 name: security-reviewer
 package: pi-shipyard
 description: Finds concrete trust-boundary, authorization, injection, secret, privacy, and unsafe-default failures
-model: anthropic-vertex/claude-opus-4-8
-fallbackModels: openai-codex/gpt-5.6-sol, anthropic-vertex/claude-fable-5
+model: google-vertex/gemini-3.1-pro-preview
+fallbackModels: openai-codex/gpt-5.6-sol, kimi-coding/k3
 thinking: high
 tools: read, grep, find, ls, review_findings, shipyard_repo
 systemPromptMode: replace
